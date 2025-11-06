@@ -1,0 +1,11 @@
+[project]
+name = "onchain-tools"
+version = "0.1.0"
+description = "Foundation for a multi-agent onchain analysis platform"
+authors = [ { name = "" } ]
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = []
+
+[tool.ruff]
+line-length = 100
