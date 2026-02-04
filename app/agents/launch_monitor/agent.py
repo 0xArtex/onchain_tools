@@ -17,7 +17,7 @@ from ...logging_config import logger
 class LaunchConfig:
     """Configuration for launch monitor agent"""
     CHAINS = ["bsc", "solana", "base"]
-    POLL_MINUTES = 5
+    POLL_SECONDS = 30
     LOOKBACK_HOURS = 1
     MIN_LIQUIDITY = 6000
     MIN_MARKET_CAP = 0
@@ -257,12 +257,12 @@ class LaunchMonitorAgent(BaseAgent):
                 logger.error(f"Scan failed: {e}")
             
             # Wait for next poll
-            await asyncio.sleep(self.config.POLL_MINUTES * 60)
+            await asyncio.sleep(self.config.POLL_SECONDS)
     
     async def _fetch_json(self, url: str) -> dict | list | None:
         """Fetch JSON from URL with retry"""
         try:
-            await asyncio.sleep(0.4)  # Rate limit
+            await asyncio.sleep(0.15)  # Rate limit
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(
                     url,
