@@ -83,6 +83,7 @@ class TelegramService:
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
+            .replace('"', "&quot;")
         )
     
     def format_token_message(self, token: dict) -> tuple[str, str | None]:
@@ -123,6 +124,23 @@ class TelegramService:
                 hours = age // 60
                 mins = age % 60
                 message += f"⏰ <b>Age:</b> {hours}h {mins}m\n"
+        
+        # Rug check section (Solana only)
+        rug_check = token.get("rug_check")
+        if rug_check:
+            level = rug_check.get("risk_level", "unknown")
+            score = rug_check.get("score_normalised", -1)
+            lp_locked = rug_check.get("lp_locked_pct", 0)
+            top_risks = rug_check.get("top_risks", [])
+            level_emoji = {"good": "🟢", "warn": "🟡", "danger": "🔴"}.get(level, "⚪")
+            
+            message += f"\n⚠️ <b>Risk:</b> {level_emoji} {score}/100 | "
+            message += f"🔒 <b>LP Locked:</b> {lp_locked:.0f}%\n"
+            
+            if top_risks:
+                for rname, rlevel in top_risks:
+                    r_emoji = {"danger": "🔴", "warn": "🟡"}.get(rlevel, "⚪")
+                    message += f"  {r_emoji} {self._esc(rname)}\n"
         
         message += f"\n"
         
@@ -255,6 +273,89 @@ class TwitterService:
             return None
 
 
+class RugCheckService:
+    """Service for checking token risk via RugCheck.xyz API (Solana only)"""
+    
+    API_BASE = "https://api.rugcheck.xyz/v1"
+    
+    async def get_summary(self, mint_address: str) -> dict | None:
+        """Get risk summary for a Solana token.
+        
+        Returns dict with keys: score, score_normalised, risks, lp_locked_pct, risk_level
+        Or None on failure.
+        """
+        try:
+            url = f"{self.API_BASE}/tokens/{mint_address}/report/summary"
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(url, headers={"Accept": "application/json"})
+                
+                if response.status_code != 200:
+                    logger.warning(f"RugCheck error ({response.status_code}) for {mint_address[:12]}...")
+                    return None
+                
+                data = response.json()
+                score_norm = data.get("score_normalised", -1)
+                
+                # Determine risk level
+                if score_norm < 0:
+                    risk_level = "unknown"
+                elif score_norm <= 30:
+                    risk_level = "good"
+                elif score_norm <= 60:
+                    risk_level = "warn"
+                else:
+                    risk_level = "danger"
+                
+                # Extract top risks (max 3)
+                risks = data.get("risks", [])
+                top_risks = []
+                for r in sorted(risks, key=lambda x: x.get("score", 0), reverse=True)[:3]:
+                    name = r.get("name", "")
+                    value = r.get("value", "")
+                    level = r.get("level", "")
+                    if name:
+                        entry = name
+                        if value:
+                            entry += f" ({value})"
+                        top_risks.append((entry, level))
+                
+                return {
+                    "score": data.get("score", 0),
+                    "score_normalised": score_norm,
+                    "lp_locked_pct": data.get("lpLockedPct", 0),
+                    "risk_level": risk_level,
+                    "top_risks": top_risks,
+                }
+                
+        except Exception as e:
+            logger.warning(f"RugCheck failed for {mint_address[:12]}...: {e}")
+            return None
+    
+    @staticmethod
+    def format_risk_label(summary: dict) -> str:
+        """Format risk summary as a compact label for Telegram messages."""
+        level = summary.get("risk_level", "unknown")
+        score = summary.get("score_normalised", -1)
+        lp_locked = summary.get("lp_locked_pct", 0)
+        top_risks = summary.get("top_risks", [])
+        
+        # Risk emoji
+        level_emoji = {"good": "🟢", "warn": "🟡", "danger": "🔴"}.get(level, "⚪")
+        
+        lines = []
+        lines.append(f"⚠️ <b>Risk:</b> {level_emoji} {score}/100")
+        lines.append(f"🔒 <b>LP Locked:</b> {lp_locked:.0f}%")
+        
+        if top_risks:
+            risk_strs = []
+            for name, rlevel in top_risks:
+                r_emoji = {"danger": "🔴", "warn": "🟡"}.get(rlevel, "⚪")
+                risk_strs.append(f"{r_emoji} {name}")
+            lines.append("\n".join(risk_strs))
+        
+        return "\n".join(lines)
+
+
 class LaunchMonitorAgent(BaseAgent):
     name = "launch_monitor"
     request_channel = "launch_monitor:request"
@@ -264,6 +365,7 @@ class LaunchMonitorAgent(BaseAgent):
         super().__init__(*args, **kwargs)
         self.config = LaunchConfig()
         self.twitter = TwitterService(api_key=getattr(settings, "twitterapi_key", None))
+        self.rugcheck = RugCheckService()
         self.telegram = TelegramService(
             bot_token=getattr(settings, "telegram_bot_token", None),
             chat_id=getattr(settings, "telegram_chat_id", None)
@@ -524,6 +626,13 @@ class LaunchMonitorAgent(BaseAgent):
                 # Passed all checks - publish new token alert
                 found_count += 1
                 
+                # Fetch rug check for Solana tokens
+                rug_summary = None
+                if chain == "solana":
+                    token_address = pair.get("baseToken", {}).get("address", "")
+                    if token_address:
+                        rug_summary = await self.rugcheck.get_summary(token_address)
+                
                 token_data = {
                     "pair_id": pair_id,
                     "chain": chain,
@@ -536,6 +645,7 @@ class LaunchMonitorAgent(BaseAgent):
                     "twitter_url": twitter_url,
                     "twitter_followers": followers,
                     "twitter_profile": twitter_profile,
+                    "rug_check": rug_summary,
                     "dex_url": pair.get("url") or f"https://dexscreener.com/{chain}/{pair_id}",
                     "created_at": datetime.fromtimestamp(created_ms / 1000).isoformat() if created_ms else None,
                     "age_minutes": int((now - created_ms) / 60000) if created_ms else None,
