@@ -43,42 +43,63 @@ class TelegramService:
         image_url: str | None = None,
         reply_markup: dict | None = None,
     ) -> dict | None:
-        """Send message to Telegram. Returns the sent message object or None."""
+        """Send message to Telegram. Returns the sent message object or None.
+        
+        Strategy: always send text via sendMessage first (reliable links on all
+        clients), then try to send the image as a separate photo reply. This
+        avoids the desktop Telegram bug where HTML links in sendPhoto captions
+        break or become non-clickable.
+        """
         if not self.enabled:
             logger.debug("Telegram not configured, skipping notification")
             return None
         
+        sent_msg = None
         try:
-            url = f"https://api.telegram.org/bot{self.bot_token}"
-            
+            # 1. Always send as text message (links work reliably on all platforms)
+            url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             payload: dict[str, Any] = {
                 "chat_id": self.chat_id,
+                "text": message,
                 "parse_mode": "HTML",
+                "disable_web_page_preview": True,  # We'll show image separately
             }
             
             if reply_markup:
                 payload["reply_markup"] = reply_markup
-            
-            # Send photo with caption or text message
-            if image_url:
-                url += "/sendPhoto"
-                payload["photo"] = image_url
-                payload["caption"] = message
-            else:
-                url += "/sendMessage"
-                payload["text"] = message
-                payload["disable_web_page_preview"] = False
             
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.post(url, json=payload)
                 result = response.json()
                 
                 if result.get("ok"):
-                    logger.info("✅ Telegram message sent successfully")
-                    return result.get("result")
+                    logger.info("✅ Telegram text message sent")
+                    sent_msg = result.get("result")
                 else:
-                    logger.error(f"❌ Telegram error: {result.get('description', 'Unknown')}")
+                    logger.error(f"❌ Telegram text error: {result.get('description', 'Unknown')}")
                     return None
+            
+            # 2. If we have an image, send it as a reply photo (banner/pfp showcase)
+            if image_url and sent_msg:
+                msg_id = sent_msg.get("message_id")
+                try:
+                    photo_url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
+                    photo_payload: dict[str, Any] = {
+                        "chat_id": self.chat_id,
+                        "photo": image_url,
+                        "reply_to_message_id": msg_id,
+                    }
+                    async with httpx.AsyncClient(timeout=15.0) as client:
+                        photo_resp = await client.post(photo_url, json=photo_payload)
+                        photo_result = photo_resp.json()
+                        if photo_result.get("ok"):
+                            logger.info("✅ Banner/profile image sent as reply")
+                        else:
+                            logger.warning(f"⚠️ Failed to send image (non-fatal): {photo_result.get('description', 'Unknown')}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Image send failed (non-fatal): {e}")
+            
+            return sent_msg
                     
         except Exception as e:
             logger.error(f"❌ Telegram send failed: {e}")
