@@ -229,29 +229,26 @@ class TelegramService:
             tw_user = self._esc(profile.get("username", ""))
             tw_name = self._esc(profile.get("name", ""))
             tw_bio = self._esc(profile.get("bio", ""))
-            safe_twitter = self._esc(twitter_url)
             
-            message += f'🐦 <a href="{safe_twitter}"><b>@{tw_user}</b></a>'
+            message += f"🐦 <b>@{tw_user}</b>"
             if tw_name and tw_name != tw_user:
                 message += f" ({tw_name})"
             if followers:
                 message += f" • {followers:,} followers"
-            message += "\n"
+            message += f"\n{twitter_url}\n"
             
             if tw_bio:
                 message += f"<i>{tw_bio}</i>\n"
         elif twitter_url:
-            safe_twitter = self._esc(twitter_url)
-            message += f'🐦 <a href="{safe_twitter}">Twitter/X</a>'
+            message += f"🐦 <b>Twitter/X</b>"
             if followers:
                 message += f" ({followers:,} followers)"
-            message += "\n"
+            message += f"\n{twitter_url}\n"
         
         message += "\n"
         
         if dex_url:
-            safe_dex = self._esc(dex_url)
-            message += f'📈 <a href="{safe_dex}">View on DexScreener</a>\n'
+            message += f"📈 <b>DexScreener</b>\n{dex_url}\n"
         
         message += f"\n<code>{pair_id}</code>"
         
