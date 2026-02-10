@@ -57,7 +57,7 @@ class TelegramService:
         sent_msg = None
         try:
             # 1. Always send as text message (links work reliably on all platforms)
-            logger.debug(f"📤 HTML message (first 500): {message[:500]}")
+            logger.info(f"📤 HTML message (first 800): {message[:800]}")
             url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
             payload: dict[str, Any] = {
                 "chat_id": self.chat_id,
@@ -125,6 +125,11 @@ class TelegramService:
             .replace(">", "&gt;")
             .replace('"', "&quot;")
         )
+
+    @staticmethod
+    def _esc_url(url: str) -> str:
+        """Escape URL for use inside HTML href attribute"""
+        return str(url).replace("&", "&amp;").replace('"', "&quot;")
     
     async def answer_callback(self, callback_id: str, text: str = "", alert: bool = False) -> None:
         """Acknowledge a callback query."""
@@ -240,7 +245,7 @@ class TelegramService:
             tw_name = self._esc(profile.get("name", ""))
             tw_bio = self._esc(profile.get("bio", ""))
             
-            message += f'🐦 <a href="{twitter_url}"><b>@{tw_user}</b></a>'
+            message += f'🐦 <a href="{self._esc_url(twitter_url)}"><b>@{tw_user}</b></a>'
             if tw_name and tw_name != tw_user:
                 message += f" ({tw_name})"
             if followers:
@@ -250,7 +255,7 @@ class TelegramService:
             if tw_bio:
                 message += f"<i>{tw_bio}</i>\n"
         elif twitter_url:
-            message += f'🐦 <a href="{twitter_url}"><b>Twitter/X</b></a>'
+            message += f'🐦 <a href="{self._esc_url(twitter_url)}">Twitter/X</a>'
             if followers:
                 message += f" ({followers:,} followers)"
             message += "\n"
@@ -264,7 +269,7 @@ class TelegramService:
         message += "\n"
         
         if dex_url:
-            message += f'📈 <a href="{dex_url}">DexScreener</a>\n'
+            message += f'📈 <a href="{self._esc_url(dex_url)}">DexScreener</a>\n'
         
         if pair_id:
             message += f"\n<code>{pair_id}</code>"
@@ -498,7 +503,8 @@ class RedFlagDetector:
         lines = ["\n🚩 <b>RED FLAGS:</b>"]
         for desc, severity in flags:
             emoji = "🔴" if severity == "danger" else "🟡"
-            lines.append(f"  {emoji} {desc}")
+            safe_desc = str(desc).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            lines.append(f"  {emoji} {safe_desc}")
         return "\n".join(lines)
 
 
