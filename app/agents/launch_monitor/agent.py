@@ -235,7 +235,7 @@ class TelegramService:
                 message += f" ({tw_name})"
             if followers:
                 message += f" • {followers:,} followers"
-            message += f"\n{twitter_url}\n"
+            message += f'\n<a href="{twitter_url}">{twitter_url}</a>\n'
             
             if tw_bio:
                 message += f"<i>{tw_bio}</i>\n"
@@ -243,7 +243,7 @@ class TelegramService:
             message += f"🐦 <b>Twitter/X</b>"
             if followers:
                 message += f" ({followers:,} followers)"
-            message += f"\n{twitter_url}\n"
+            message += f'\n<a href="{twitter_url}">{twitter_url}</a>\n'
         
         # Red flags section
         red_flags = token.get("red_flags", [])
@@ -254,7 +254,7 @@ class TelegramService:
         message += "\n"
         
         if dex_url:
-            message += f"📈 <b>DexScreener</b>\n{dex_url}\n"
+            message += f'📈 <a href="{dex_url}">DexScreener</a>\n'
         
         message += f"\n<code>{pair_id}</code>"
         
