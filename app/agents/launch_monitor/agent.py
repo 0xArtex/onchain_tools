@@ -984,7 +984,7 @@ class LaunchMonitorAgent(BaseAgent):
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 resp = await client.post(
-                    f"{webhook_url}/hooks/token-alert",
+                    f"{webhook_url}/hooks/agent",
                     headers={
                         "X-Proxy-Token": proxy_token,
                         "Content-Type": "application/json",
@@ -992,6 +992,9 @@ class LaunchMonitorAgent(BaseAgent):
                     json={
                         "message": message,
                         "name": "TokenAlert",
+                        "deliver": True,
+                        "channel": "telegram",
+                        "to": "-1003656373267",
                     },
                 )
                 if resp.status_code == 202:
