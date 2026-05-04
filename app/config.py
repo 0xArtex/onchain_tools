@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = Field(default=None)
     twitterapi_key: str | None = Field(default=None)
-    
+
     # Telegram
     telegram_bot_token: str | None = Field(default=None)
     telegram_chat_id: str | None = Field(default=None)
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Webhook forwarder (OpenClaw a-bot)
     abot_webhook_url: str | None = Field(default=None)
     abot_proxy_token: str | None = Field(default=None)
+    abot_webhook_secret: str | None = Field(default=None)
 
     # Buyer
     solana_private_key: str | None = Field(default=None)

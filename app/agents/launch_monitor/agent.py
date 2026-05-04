@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import re
 from datetime import datetime
@@ -1063,6 +1065,7 @@ class LaunchMonitorAgent(BaseAgent):
         """Forward token alert to Hermes/OpenClaw webhook for second-stage research."""
         webhook_url = getattr(settings, "abot_webhook_url", None)
         proxy_token = getattr(settings, "abot_proxy_token", None)
+        webhook_secret = getattr(settings, "abot_webhook_secret", None)
         if not webhook_url:
             return
 
@@ -1080,12 +1083,19 @@ class LaunchMonitorAgent(BaseAgent):
         headers = {"Content-Type": "application/json"}
         if proxy_token:
             headers["X-Proxy-Token"] = proxy_token
+        request_kwargs = {"json": payload}
+        if webhook_secret:
+            body = json.dumps(payload, separators=(",", ":")).encode()
+            headers["X-Webhook-Signature"] = hmac.new(
+                webhook_secret.encode(), body, hashlib.sha256
+            ).hexdigest()
+            request_kwargs = {"content": body, "json": None}
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 last_resp = None
                 for url in build_hook_urls(webhook_url):
-                    resp = await client.post(url, headers=headers, json=payload)
+                    resp = await client.post(url, headers=headers, **request_kwargs)
                     last_resp = resp
                     if resp.status_code in (200, 202):
                         logger.info(f"✅ Forwarded ${sym} alert to Hermes webhook via {url}")

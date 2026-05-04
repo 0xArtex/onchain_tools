@@ -67,9 +67,47 @@ python -m app.main gateway
 
 ## Local Docker deployment with private Hermes webhook
 
-If Hermes and the scanner run on this machine, the Hermes webhook does not need to be public. Run Hermes' webhook gateway on the host and let the Docker container call it through `host.docker.internal`.
+If Hermes and the scanner run on this machine, the Hermes webhook does not need to be public. Run Hermes' webhook gateway on the host loopback and run the scanner container with host networking so it can call `127.0.0.1:8644` privately.
 
-1. Enable/start the Hermes webhook gateway on the host:
+### Hermes/OpenClaw agent setup brief
+
+This is the recommended same-machine setup for Hermes/OpenClaw agents that want private token-alert routing:
+
+1. Bind Hermes webhooks to host loopback, not the public internet:
+```bash
+hermes config set platforms.webhook.enabled true
+hermes config set platforms.webhook.extra.host 127.0.0.1
+hermes config set platforms.webhook.extra.port 8644
+hermes gateway restart
+```
+
+2. Create the Hermes route and save the generated HMAC secret:
+```bash
+hermes webhook subscribe onchain-alerts \
+  --skills token-research,x-research,agents-infra \
+  --deliver log \
+  --prompt 'Research this new token alert using token-research and x-research. If weak, final answer SKIP and do not notify. If WATCH, APE, or BUY, send a Telegram DM to the operator with verdict, chain, token address, pair URL, key metrics, X/community findings, risks, and next action. Raw alert: {__raw__}'
+```
+
+3. Put the route URL and secret into this repo's `.env`:
+```bash
+ABOT_WEBHOOK_URL=http://127.0.0.1:8644/webhooks/onchain-alerts
+ABOT_WEBHOOK_SECRET=<secret printed by hermes webhook subscribe>
+ENABLE_TELEGRAM=false   # optional: disables raw scanner Telegram alerts; Hermes will DM researched alerts
+```
+
+4. Run the stack:
+```bash
+docker compose up -d --build
+```
+
+Notes:
+- `docker-compose.yml` uses `network_mode: host` for the scanner on Linux, so `127.0.0.1:8644` reaches the host Hermes gateway.
+- On Docker Desktop/macOS/Windows, remove `network_mode: host` and use `host.docker.internal` instead.
+- Hermes webhooks require HMAC by default. `ABOT_WEBHOOK_SECRET` signs requests with `X-Webhook-Signature`.
+- Do not commit `.env`; commit only `.env.example` placeholders.
+
+### Manual step-by-step
 ```bash
 hermes gateway setup
 # enable Webhooks, or set WEBHOOK_ENABLED=true / WEBHOOK_PORT=8644 in Hermes env
@@ -84,8 +122,9 @@ hermes webhook subscribe onchain-alerts
 3. Configure scanner env:
 ```bash
 cp .env.example .env
-# edit .env and set TWITTERAPI_KEY, Telegram settings, and ABOT_PROXY_TOKEN if needed
-ABOT_WEBHOOK_URL=http://host.docker.internal:8644/webhooks/onchain-alerts
+# edit .env and set TWITTERAPI_KEY, Telegram settings, and ABOT_WEBHOOK_SECRET
+ABOT_WEBHOOK_URL=http://127.0.0.1:8644/webhooks/onchain-alerts
+ABOT_WEBHOOK_SECRET=<secret printed by hermes webhook subscribe>
 ```
 
 4. Run scanner + Redis locally:
@@ -105,7 +144,8 @@ Edit `.env` file:
 - `TWITTERAPI_KEY` - Get from https://twitterapi.io (optional)
 - `LOG_LEVEL` - DEBUG, INFO, WARNING, ERROR
 - `ABOT_WEBHOOK_URL` - optional Hermes/OpenClaw webhook for second-stage token research
-- `ABOT_PROXY_TOKEN` - optional proxy token sent as `X-Proxy-Token` to the webhook
+- `ABOT_WEBHOOK_SECRET` - optional HMAC secret for native Hermes `/webhooks/<route>` URLs; sends `X-Webhook-Signature`
+- `ABOT_PROXY_TOKEN` - optional legacy proxy token sent as `X-Proxy-Token` to OpenClaw/a-bot style hooks
 
 See `docs/hermes-alert-routing.md` for the WATCH/APE/BUY routing flow.
 

@@ -13,15 +13,15 @@ services:
     restart: unless-stopped
     depends_on:
       - redis
+    # Same-machine Hermes routing: share the host network so the scanner can
+    # call Hermes on http://127.0.0.1:8644 without exposing the gateway publicly.
+    # Linux-only; for non-Linux Docker Desktop, use host.docker.internal instead.
+    network_mode: host
     env_file:
       - path: .env
         required: false
     environment:
-      REDIS_URL: redis://redis:6379/0
-      # Lets Linux Docker containers reach services bound on the host machine.
-      # Point ABOT_WEBHOOK_URL at http://host.docker.internal:8644/webhooks/<name>
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      REDIS_URL: redis://127.0.0.1:6379/0
     command: ["python", "-m", "app.main", "agent", "launch"]
 
 volumes:

@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import json
 
 from app.agents.launch_monitor import agent as launch_agent
@@ -66,12 +68,13 @@ def test_forwarder_posts_structured_payload_to_hermes_webhook(monkeypatch):
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
-        async def post(self, url, headers, json):
-            calls.append({"url": url, "headers": headers, "json": json})
+        async def post(self, url, headers, **kwargs):
+            calls.append({"url": url, "headers": headers, **kwargs})
             return FakeResponse()
 
     monkeypatch.setattr(launch_agent.settings, "abot_webhook_url", "https://hermes.example/webhooks/onchain-alerts")
     monkeypatch.setattr(launch_agent.settings, "abot_proxy_token", "secret-token")
+    monkeypatch.setattr(launch_agent.settings, "abot_webhook_secret", None)
     monkeypatch.setattr(launch_agent.httpx, "AsyncClient", FakeAsyncClient)
 
     agent = object.__new__(LaunchMonitorAgent)
@@ -84,3 +87,40 @@ def test_forwarder_posts_structured_payload_to_hermes_webhook(monkeypatch):
     assert calls[0]["json"]["type"] == "new_token_alert"
     assert calls[0]["json"]["token"]["token_address"] == "0xtoken"
     assert calls[0]["json"]["token"]["metrics"]["market_cap"] == 85000
+
+
+def test_forwarder_signs_payload_for_hermes_hmac_webhook(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        status_code = 202
+        text = "accepted"
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def post(self, url, headers, **kwargs):
+            calls.append({"url": url, "headers": headers, **kwargs})
+            return FakeResponse()
+
+    monkeypatch.setattr(launch_agent.settings, "abot_webhook_url", "https://hermes.example/webhooks/onchain-alerts")
+    monkeypatch.setattr(launch_agent.settings, "abot_proxy_token", None)
+    monkeypatch.setattr(launch_agent.settings, "abot_webhook_secret", "hmac-secret")
+    monkeypatch.setattr(launch_agent.httpx, "AsyncClient", FakeAsyncClient)
+
+    agent = object.__new__(LaunchMonitorAgent)
+
+    asyncio.run(agent._forward_to_abot(SAMPLE_TOKEN))
+
+    assert len(calls) == 1
+    body = calls[0]["content"]
+    expected = hmac.new(b"hmac-secret", body, hashlib.sha256).hexdigest()
+    assert calls[0]["json"] is None
+    assert calls[0]["headers"]["X-Webhook-Signature"] == expected

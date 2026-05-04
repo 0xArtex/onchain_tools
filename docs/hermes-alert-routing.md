@@ -14,20 +14,20 @@
 
 ## Local Docker on the Hermes host (no public exposure)
 
-If the scanner runs in Docker on the same machine as Hermes, keep the Hermes gateway private and call it from the container through Docker's host gateway:
+If the scanner runs in Docker on the same machine as Hermes, keep the Hermes gateway private and call it from the scanner container through host networking:
 
 ```bash
-ABOT_WEBHOOK_URL=http://host.docker.internal:8644/webhooks/onchain-alerts
+ABOT_WEBHOOK_URL=http://127.0.0.1:8644/webhooks/onchain-alerts
+ABOT_WEBHOOK_SECRET=<secret printed by hermes webhook subscribe>
 ```
 
 `docker-compose.yml` includes:
 
 ```yaml
-extra_hosts:
-  - "host.docker.internal:host-gateway"
+network_mode: host
 ```
 
-So Linux Docker containers can resolve `host.docker.internal` to the host machine.
+So on Linux, the scanner container shares the host network namespace and can reach Hermes on host loopback without exposing the webhook publicly. On Docker Desktop/macOS/Windows, remove `network_mode: host` and use `host.docker.internal` instead.
 
 Run:
 
@@ -50,7 +50,11 @@ ENABLE_TELEGRAM=true
 # If this is an OpenClaw base URL, the app will try /hooks/wake then /hooks/agent.
 ABOT_WEBHOOK_URL=https://your-hermes-host/webhooks/onchain-alerts
 
-# Optional. Sent as X-Proxy-Token when present.
+# Native Hermes webhooks require HMAC by default. This secret signs the JSON body
+# with X-Webhook-Signature.
+ABOT_WEBHOOK_SECRET=...
+
+# Optional legacy OpenClaw/a-bot proxy token. Sent as X-Proxy-Token when present.
 ABOT_PROXY_TOKEN=...
 ```
 
@@ -59,11 +63,18 @@ ABOT_PROXY_TOKEN=...
 On the machine running Hermes:
 
 ```bash
-hermes webhook subscribe onchain-alerts
+hermes config set platforms.webhook.enabled true
+hermes config set platforms.webhook.extra.host 127.0.0.1
+hermes config set platforms.webhook.extra.port 8644
+hermes gateway restart
+hermes webhook subscribe onchain-alerts \
+  --skills token-research,x-research,agents-infra \
+  --deliver log \
+  --prompt 'Research this new token alert using token-research and x-research. If weak, final answer SKIP and do not notify. If WATCH, APE, or BUY, send a Telegram DM to the operator with verdict, chain, token address, pair URL, key metrics, X/community findings, risks, and next action. Raw alert: {__raw__}'
 hermes webhook list
 ```
 
-Expose the gateway/webhook server to the scanner host with your preferred tunnel or reverse proxy. Put the public route into `ABOT_WEBHOOK_URL`.
+For same-machine Docker, keep the webhook bound to loopback and use host networking for the scanner so it is reachable from the container but not exposed publicly. Put the route URL and generated HMAC secret into `ABOT_WEBHOOK_URL` and `ABOT_WEBHOOK_SECRET`.
 
 ## Payload shape
 
