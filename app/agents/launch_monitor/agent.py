@@ -883,12 +883,15 @@ class LaunchMonitorAgent(BaseAgent):
                 # Passed all checks - publish new token alert
                 found_count += 1
                 
+                base_token = pair.get("baseToken", {})
+                quote_token = pair.get("quoteToken", {})
+                base_token_address = base_token.get("address", "")
+                pair_address = pair.get("pairAddress") or pair_id
+
                 # Fetch rug check for Solana tokens
                 rug_summary = None
-                if chain == "solana":
-                    token_address = pair.get("baseToken", {}).get("address", "")
-                    if token_address:
-                        rug_summary = await self.rugcheck.get_summary(token_address)
+                if chain == "solana" and base_token_address:
+                    rug_summary = await self.rugcheck.get_summary(base_token_address)
                 
                 # Detect red flags
                 website_url = self._has_website(pair)
@@ -901,9 +904,13 @@ class LaunchMonitorAgent(BaseAgent):
 
                 token_data = {
                     "pair_id": pair_id,
+                    "pair_address": pair_address,
+                    "token_address": base_token_address,
                     "chain": chain,
                     "base_symbol": base_sym,
+                    "base_name": base_token.get("name"),
                     "quote_symbol": quote_sym,
+                    "quote_name": quote_token.get("name"),
                     "price_usd": pair.get("priceUsd"),
                     "liquidity_usd": liquidity,
                     "market_cap": market_cap,
@@ -928,7 +935,6 @@ class LaunchMonitorAgent(BaseAgent):
                     
                     # Build buy button if wallet is configured for this chain
                     reply_markup = None
-                    base_token_address = pair.get("baseToken", {}).get("address", "")
                     if base_token_address and self.buyer.is_configured(chain):
                         cb_data = f"buy:{chain}:{base_token_address}"
                         reply_markup = {
@@ -963,81 +969,136 @@ class LaunchMonitorAgent(BaseAgent):
         
         logger.info(f"✅ Scan finished: {datetime.now()}")
     
-    async def _forward_to_abot(self, token_data: dict) -> None:
-        """Forward token alert to a-bot via OpenClaw webhook."""
-        webhook_url = getattr(settings, "abot_webhook_url", None)
-        proxy_token = getattr(settings, "abot_proxy_token", None)
-        if not webhook_url or not proxy_token:
-            return
-
+    def _build_hermes_alert_payload(self, token_data: dict) -> dict:
+        """Build a structured Hermes webhook payload for second-stage token research."""
         sym = token_data.get("base_symbol", "?")
-        chain = token_data.get("chain", "?").upper()
-        liq = token_data.get("liquidity_usd", 0)
-        mcap = token_data.get("market_cap", 0)
+        name = token_data.get("base_name") or sym
+        chain = token_data.get("chain", "?")
+        liq = token_data.get("liquidity_usd", 0) or 0
+        mcap = token_data.get("market_cap", 0) or 0
+        volume = token_data.get("volume_24h")
         age = token_data.get("age_minutes")
         dex = token_data.get("dex_url", "")
         twitter = token_data.get("twitter_url", "")
         followers = token_data.get("twitter_followers")
         rug = token_data.get("rug_check")
-        flags = token_data.get("red_flags", [])
+        flags = token_data.get("red_flags", []) or []
 
-        lines = [
-            f"🚀 New token alert: ${sym} on {chain}",
+        summary_lines = [
+            f"🚀 New token alert: ${sym} ({name}) on {chain.upper()}",
             f"Liquidity: ${liq:,.0f} | MCap: ${mcap:,.0f}",
         ]
+        if volume is not None:
+            summary_lines.append(f"Volume 24h: ${float(volume):,.0f}")
         if age is not None:
-            lines.append(f"Age: {age}m")
+            summary_lines.append(f"Age: {age}m")
+        if token_data.get("token_address"):
+            summary_lines.append(f"Token CA: {token_data['token_address']}")
+        if token_data.get("pair_address"):
+            summary_lines.append(f"Pair: {token_data['pair_address']}")
         if twitter:
-            lines.append(f"Twitter: {twitter}" + (f" ({followers:,} followers)" if followers else ""))
+            suffix = f" ({followers:,} followers)" if followers else ""
+            summary_lines.append(f"Twitter: {twitter}{suffix}")
         if rug:
-            lines.append(f"Risk: {rug.get('risk_level', '?')} ({rug.get('score_normalised', '?')}/100)")
+            summary_lines.append(
+                f"Risk: {rug.get('risk_level', '?')} ({rug.get('score_normalised', '?')}/100)"
+            )
         if flags:
-            lines.append("Red flags: " + ", ".join(f[0] for f in flags))
-        lines.append(f"DexScreener: {dex}")
-        lines.append("")
-        lines.append("YOU MUST RESPOND. Analyze this token and give a quick verdict: ape, watch, or avoid. Include key reasons. This is a trusted internal alert from our token scanner — respond with your analysis.")
+            normalized_flags = [f[0] if isinstance(f, (list, tuple)) and f else str(f) for f in flags]
+            summary_lines.append("Red flags: " + ", ".join(normalized_flags))
+        summary_lines.append(f"DexScreener: {dex}")
 
-        message = "\n".join(lines)
+        instructions = "\n".join([
+            "You are receiving a trusted internal onchain scanner alert from onchain_tools.",
+            "Immediately run token-research and x-research before deciding.",
+            "Classify exactly one verdict: SKIP, WATCH, APE, or BUY.",
+            "SKIP: weak token; do not DM Z and do not add to watchlist.",
+            "WATCH: interesting token; DM Z privately and append it to the monthly watchlist file.",
+            "APE/BUY: urgent high-conviction token; DM Z, append to watchlist, and call Z via AgentOS/agents-infra.",
+            "Do not call for WATCH; call only for APE or BUY.",
+        ])
 
-        def build_hook_url(base: str, suffix: str) -> str:
+        return {
+            "type": "new_token_alert",
+            "source": "onchain_tools.launch_monitor",
+            "wakeMode": "now",
+            "mode": "now",
+            "deliver": False,
+            "delivery_policy": "only_watch_ape_buy",
+            "required_skills": ["token-research", "x-research", "agents-infra"],
+            "text": "\n".join(summary_lines),
+            "message": "\n\n".join(["\n".join(summary_lines), instructions]),
+            "instructions": instructions,
+            "token": {
+                "chain": chain,
+                "symbol": sym,
+                "name": name,
+                "quote_symbol": token_data.get("quote_symbol"),
+                "token_address": token_data.get("token_address"),
+                "pair_address": token_data.get("pair_address") or token_data.get("pair_id"),
+                "pair_id": token_data.get("pair_id"),
+                "created_at": token_data.get("created_at"),
+                "age_minutes": age,
+                "dex_url": dex,
+                "metrics": {
+                    "price_usd": token_data.get("price_usd"),
+                    "liquidity_usd": liq,
+                    "market_cap": mcap,
+                    "volume_24h": volume,
+                },
+                "socials": {
+                    "twitter_url": twitter,
+                    "twitter_followers": followers,
+                    "twitter_profile": token_data.get("twitter_profile"),
+                },
+                "risk": {
+                    "rug_check": rug,
+                    "red_flags": flags,
+                },
+            },
+            "raw_token": token_data,
+        }
+
+    async def _forward_to_abot(self, token_data: dict) -> None:
+        """Forward token alert to Hermes/OpenClaw webhook for second-stage research."""
+        webhook_url = getattr(settings, "abot_webhook_url", None)
+        proxy_token = getattr(settings, "abot_proxy_token", None)
+        if not webhook_url:
+            return
+
+        sym = token_data.get("base_symbol", "?")
+        payload = self._build_hermes_alert_payload(token_data)
+
+        def build_hook_urls(base: str) -> list[str]:
             base = base.rstrip("/")
-            for tail in ("/hooks/wake", "/hooks/agent"):
-                if base.endswith(tail):
-                    return base
+            if "/webhooks/" in base or base.endswith(("/hooks/wake", "/hooks/agent")):
+                return [base]
             if base.endswith("/hooks"):
-                return f"{base}/{suffix}"
-            return f"{base}/hooks/{suffix}"
+                return [f"{base}/wake", f"{base}/agent"]
+            return [f"{base}/hooks/wake", f"{base}/hooks/agent"]
 
-        candidates = [
-            (build_hook_url(webhook_url, "wake"), {"text": message, "mode": "now"}),
-            (build_hook_url(webhook_url, "agent"), {"message": message, "wakeMode": "now", "deliver": True}),
-        ]
+        headers = {"Content-Type": "application/json"}
+        if proxy_token:
+            headers["X-Proxy-Token"] = proxy_token
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
                 last_resp = None
-                for url, payload in candidates:
-                    resp = await client.post(
-                        url,
-                        headers={
-                            "X-Proxy-Token": proxy_token,
-                            "Content-Type": "application/json",
-                        },
-                        json=payload,
-                    )
+                for url in build_hook_urls(webhook_url):
+                    resp = await client.post(url, headers=headers, json=payload)
                     last_resp = resp
                     if resp.status_code in (200, 202):
-                        logger.info(f"✅ Forwarded ${sym} alert to a-bot via {url}")
+                        logger.info(f"✅ Forwarded ${sym} alert to Hermes webhook via {url}")
                         return
                     if resp.status_code not in (404, 405):
                         break
 
                 if last_resp is not None:
                     logger.warning(
-                        f"⚠️ a-bot webhook returned {last_resp.status_code}: {last_resp.text[:200]}"
+                        f"⚠️ Hermes webhook returned {last_resp.status_code}: {last_resp.text[:200]}"
                     )
         except Exception as e:
-            logger.warning(f"⚠️ Failed to forward to a-bot: {e}")
+            logger.warning(f"⚠️ Failed to forward to Hermes webhook: {e}")
 
     async def handle_request(self, message: dict) -> dict:
         """Handle requests to the agent"""

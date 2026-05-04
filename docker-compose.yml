@@ -1,0 +1,28 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  launch-monitor:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      # Lets Linux Docker containers reach services bound on the host machine.
+      # Point ABOT_WEBHOOK_URL at http://host.docker.internal:8644/webhooks/<name>
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "-m", "app.main", "agent", "launch"]
+
+volumes:
+  redis-data:
