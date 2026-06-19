@@ -547,7 +547,9 @@ class LaunchMonitorAgent(BaseAgent):
         self.buyer = BuyService()
         self._monitoring = False
         self._polling = False
-        self._cache_ttl = (self.config.LOOKBACK_HOURS * 60 * 60) + 300
+        # Redis SETEX requires an integer TTL, but LOOKBACK_HOURS may be a float
+        # (e.g. LAUNCH_LOOKBACK_HOURS=1 -> 1.0). Coerce so dedup marking works.
+        self._cache_ttl = int((self.config.LOOKBACK_HOURS * 60 * 60) + 300)
         self._buy_amount = getattr(settings, "buy_amount_usd", 50.0)
         
     async def on_start(self) -> None:
@@ -599,7 +601,9 @@ class LaunchMonitorAgent(BaseAgent):
         """Mark token pair as seen (auto-expires after TTL)"""
         try:
             key = f"launch_monitor:seen:{chain}:{pair_id}"
-            await self.mq._redis.setex(key, self._cache_ttl, "1")
+            # int() guards the Redis boundary: SETEX rejects a non-integer TTL,
+            # which would raise here and leave the token un-deduped (re-alerting).
+            await self.mq._redis.setex(key, int(self._cache_ttl), "1")
             logger.debug(f"Marked {pair_id} as seen (TTL: {self._cache_ttl}s)")
         except Exception as e:
             logger.error(f"Failed to mark as seen: {e}")
