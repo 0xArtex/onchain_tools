@@ -130,6 +130,20 @@ def test_analyze_parses_buys_dedupes_and_counts(monkeypatch):
     assert calls[0]["params"]["mint"] == TOKEN
 
 
+def test_twitter_field_normalized_to_bare_handle(monkeypatch):
+    # Live API returns full profile URLs; alerts must show @handle, not @https://…
+    t = _make(monkeypatch)
+    body = _body(_tx("0xaaa", "kol", twitter="https://x.com/alpha_calls"))
+    monkeypatch.setattr(
+        cs.httpx, "AsyncClient", _fake_client({"rh": _FakeResp(200, body)}, [])
+    )
+    report = asyncio.run(t.analyze("robinhood", TOKEN))
+    assert report.buyers[0]["twitter"] == "alpha_calls"
+    assert CabalSpyService._twitter_handle("@bare") == "bare"
+    assert CabalSpyService._twitter_handle("https://twitter.com/name/") == "name"
+    assert CabalSpyService._twitter_handle("") == ""
+
+
 def test_analyze_soft_failure_body_fails_open(monkeypatch):
     # A 200 {"success": false} error envelope must fail OPEN (None), not
     # parse as "zero buyers" — the min-buyers gate would drop the alert.

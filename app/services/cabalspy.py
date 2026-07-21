@@ -239,6 +239,18 @@ class CabalSpyService:
             logger.warning(f"CabalSpy: fetch failed for {token_address[:12]}… on {chain}: {e}")
             return None
 
+    @staticmethod
+    def _twitter_handle(raw: str) -> str:
+        """Normalize a profile twitter field to a bare handle.
+
+        The live API returns full URLs (https://x.com/name); older shapes may
+        carry bare or @-prefixed handles.
+        """
+        t = (raw or "").strip().rstrip("/")
+        if "/" in t:
+            t = t.rsplit("/", 1)[-1]
+        return t.lstrip("@")
+
     def _parse_transactions(self, body: dict, chain_code: str) -> CabalReport:
         txs = ((body or {}).get("data") or {}).get("transactions") or []
         # Newest-first feed. A row's holdings_after is the wallet's position
@@ -259,7 +271,7 @@ class CabalSpyService:
                 latest[key] = {
                     "wallet": wallet,
                     "name": profile.get("name") or "",
-                    "twitter": profile.get("twitter") or "",
+                    "twitter": self._twitter_handle(profile.get("twitter") or ""),
                     "type": (profile.get("type") or "").lower(),
                     "still_holding": bool(holdings.get("still_holding", True)),
                 }
