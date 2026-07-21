@@ -15,6 +15,7 @@ from ..base import BaseAgent
 from ...config import settings
 from ...logging_config import logger
 from ...services.buyer import BuyService, BuyResult
+from ...services.claude_code import AnalysisResult, ClaudeCodeAnalyzer
 from ...services.smart_wallets import SmartWalletTracker
 
 
@@ -112,7 +113,11 @@ class TelegramService:
                         result = response.json()
                         if result.get("ok"):
                             sent_msg = result.get("result")
-                    return None
+                    # Bail only if the retry didn't rescue the send — a
+                    # successful retry must still return the message (callers
+                    # thread replies onto it) and send the banner image below.
+                    if not sent_msg:
+                        return None
             
             # 2. If we have an image, send it as a reply photo (banner/pfp showcase)
             if image_url and sent_msg:
@@ -554,6 +559,7 @@ class LaunchMonitorAgent(BaseAgent):
         )
         self.buyer = BuyService()
         self.smart_wallets = SmartWalletTracker()
+        self.claude_code = ClaudeCodeAnalyzer()
         self._monitoring = False
         self._polling = False
         # Redis SETEX requires an integer TTL, but LOOKBACK_HOURS may be a float
@@ -586,6 +592,7 @@ class LaunchMonitorAgent(BaseAgent):
                 "(SOLANA/BASE/BSC/ROBINHOOD). The monitor will not scan anything."
             )
         logger.info(self.smart_wallets.describe())
+        logger.info(self.claude_code.describe())
         # Start monitoring loop
         self._monitoring = True
         self._polling = True
@@ -1009,6 +1016,7 @@ class LaunchMonitorAgent(BaseAgent):
                 logger.info(f"✅ NEW TOKEN: {base_sym}/{quote_sym} | Liq: ${liquidity:,.0f} | Chain: {chain}")
                 
                 # Send Telegram notification
+                tg_msg = None
                 if self.telegram.enabled and getattr(settings, "enable_telegram", True):
                     message, image = self.telegram.format_token_message(token_data)
                     logger.info(f"Telegram HTML:\n{message}")
@@ -1025,10 +1033,16 @@ class LaunchMonitorAgent(BaseAgent):
                             }]]
                         }
 
-                    await self.telegram.send_message(message, image, reply_markup=reply_markup)
+                    tg_msg = await self.telegram.send_message(message, image, reply_markup=reply_markup)
 
                 # Forward to a-bot via webhook
                 await self._forward_to_abot(token_data)
+
+                # Second-stage research via local Claude Code (optional).
+                # Runs in the background — an analysis takes minutes and must
+                # not stall the scan loop.
+                if self.claude_code.enabled:
+                    asyncio.create_task(self._run_claude_analysis(token_data, tg_msg))
 
                 # Publish to message queue
                 await self.mq.publish(self.publish_channel, {
@@ -1196,6 +1210,87 @@ class LaunchMonitorAgent(BaseAgent):
                     )
         except Exception as e:
             logger.warning(f"⚠️ Failed to forward to Hermes webhook: {e}")
+
+    # ── Claude Code second-stage analysis ─────────────────────────────
+
+    async def _run_claude_analysis(self, token_data: dict, tg_msg: dict | None) -> None:
+        """Analyze one alert with the local Claude Code CLI and report the verdict.
+
+        Publishes every finished run on the ``token_analysis`` MQ channel; posts
+        successful verdicts to Telegram as a reply to the original alert.
+        """
+        sym = token_data.get("base_symbol", "?")
+        try:
+            result = await self.claude_code.analyze(token_data)
+        except Exception as e:
+            logger.warning(f"ClaudeCode analysis crashed for ${sym}: {e}")
+            return
+        if result is None:
+            return
+
+        # This coroutine runs as a fire-and-forget task, outside the monitor
+        # loop's try/except — an unhandled publish error would silently kill it
+        # and drop an already-billed verdict before the Telegram reply below.
+        try:
+            await self._publish_analysis(token_data, sym, result)
+        except Exception as e:
+            logger.warning(f"ClaudeCode: failed to publish analysis for ${sym}: {e}")
+
+        if not result.ok:
+            return  # failure already logged by the analyzer; keep Telegram quiet
+
+        if self.telegram.enabled and getattr(settings, "enable_telegram", True):
+            text = self._format_claude_verdict(result)
+            reply_to = tg_msg.get("message_id") if tg_msg else None
+            await self.telegram.send_reply(self.telegram.chat_id, text, reply_to=reply_to)
+
+    async def _publish_analysis(self, token_data: dict, sym: str, result: AnalysisResult) -> None:
+        await self.mq.publish("token_analysis", {
+            "type": "token_analysis",
+            "source": "onchain_tools.launch_monitor.claude_code",
+            "data": {
+                "pair_id": token_data.get("pair_id"),
+                "token_address": token_data.get("token_address"),
+                "chain": token_data.get("chain"),
+                "base_symbol": sym,
+                "ok": result.ok,
+                "verdict": result.verdict,
+                "confidence": result.confidence,
+                "summary": result.summary,
+                "reasons": result.reasons,
+                "risks": result.risks,
+                "model": result.model,
+                "cost_usd": result.cost_usd,
+                "duration_seconds": result.duration_seconds,
+                "session_id": result.session_id,
+                "error": result.error,
+            },
+        })
+
+    def _format_claude_verdict(self, result: AnalysisResult) -> str:
+        """Format an analysis result as a Telegram HTML message."""
+        esc = self.telegram._esc
+        emoji = {"SKIP": "⏭️", "WATCH": "👀", "APE": "🦍", "BUY": "💰"}.get(result.verdict, "❓")
+        lines = [
+            f"🤖 <b>Claude Code verdict:</b> {emoji} <b>{esc(result.verdict)}</b> "
+            f"({result.confidence}% confidence)"
+        ]
+        if result.summary:
+            lines.append(esc(result.summary))
+        if result.reasons:
+            lines.append("")
+            lines.append("<b>Why:</b>")
+            lines.extend(f"  • {esc(r)}" for r in result.reasons[:5])
+        if result.risks:
+            lines.append("")
+            lines.append("<b>Risks:</b>")
+            lines.extend(f"  ⚠️ {esc(r)}" for r in result.risks[:5])
+        meta = f"{esc(result.model)} | {result.duration_seconds:.0f}s"
+        if result.cost_usd:
+            meta += f" | ${result.cost_usd:.2f}"
+        lines.append("")
+        lines.append(f"<i>{meta}</i>")
+        return "\n".join(lines)
 
     async def handle_request(self, message: dict) -> dict:
         """Handle requests to the agent"""

@@ -72,6 +72,24 @@ class Settings(BaseSettings):
     helius_api_key: str | None = Field(default=None)   # Solana holdings
     alchemy_api_key: str | None = Field(default=None)  # Base/BSC/Robinhood holdings
 
+    # ── Claude Code analysis (optional; OFF by default) ─────────────
+    # Second-stage token research through the LOCAL Claude Code CLI
+    # (headless `claude -p`), parallel to the Hermes webhook forwarder.
+    claude_code_enabled: bool = Field(default=False)
+    claude_code_model: str = Field(default="claude-opus-4-8")  # or claude-fable-5 (aliases opus/fable work)
+    claude_code_bin: str = Field(default="claude")
+    claude_code_timeout_seconds: int = Field(default=600)
+    claude_code_max_budget_usd: float = Field(default=1.0)   # hard per-run API cost cap
+    claude_code_max_concurrent: int = Field(default=1)
+    claude_code_max_pending: int = Field(default=3)  # skip alerts beyond this backlog
+    claude_code_permission_mode: str = Field(default="dontAsk")
+    # Web-only by default. The prompt embeds untrusted token metadata, so
+    # granting Read/Glob/Grep would let a prompt-injected session read local
+    # files (.env holds private keys) with WebFetch available to exfiltrate.
+    claude_code_allowed_tools: str = Field(default="WebSearch,WebFetch")
+    claude_code_effort: str = Field(default="")   # low|medium|high|xhigh|max; empty = CLI default
+    claude_code_workdir: str = Field(default="")  # empty = monitor's cwd
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="allow")
 
 

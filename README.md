@@ -198,6 +198,41 @@ checked on Base, BSC, and Robinhood Chain.
 treated as "unknown" and tokens pass through (with a warning) — you never get
 silent zero-alerts. Need a Helius key? See the `helius` skill (signup ~1 USDC).
 
+#### Claude Code analysis (optional)
+
+Second-stage research through your **local Claude Code install**, parallel to the
+Hermes webhook. Each alert spawns a headless `claude -p` session that researches
+the token (using the `token-research` skill if installed, plus web search) and
+returns a strict-JSON verdict — `SKIP` / `WATCH` / `APE` / `BUY` with confidence,
+reasons, and risks. The verdict is posted to Telegram as a reply to the original
+alert and published on the `token_analysis` MQ channel. **Off by default** —
+runs are billed against your Claude login.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CLAUDE_CODE_ENABLED` | `false` | Master switch; also requires the `claude` CLI on PATH |
+| `CLAUDE_CODE_MODEL` | `claude-opus-4-8` | Analysis model; set `claude-fable-5` (or aliases `opus`/`fable`) |
+| `CLAUDE_CODE_MAX_BUDGET_USD` | `1.0` | Hard API-cost cap per analysis run |
+| `CLAUDE_CODE_TIMEOUT_SECONDS` | `600` | Wall-clock kill switch per run |
+| `CLAUDE_CODE_MAX_CONCURRENT` | `1` | Max simultaneous Claude Code sessions |
+| `CLAUDE_CODE_MAX_PENDING` | `3` | Backlog cap — alerts beyond this are skipped, not queued forever |
+| `CLAUDE_CODE_PERMISSION_MODE` | `dontAsk` | Headless-safe: auto-denies non-allow-listed tools instead of prompting |
+| `CLAUDE_CODE_ALLOWED_TOOLS` | `WebSearch,WebFetch` | Web-only research allow-list (see security note) |
+| `CLAUDE_CODE_EFFORT` | _(empty)_ | Optional reasoning effort: `low`–`max`; empty = CLI default |
+| `CLAUDE_CODE_BIN` / `CLAUDE_CODE_WORKDIR` | `claude` / _(empty)_ | CLI binary and working directory overrides |
+
+Implemented in `app/services/claude_code.py`; a verdict fires as a background
+task from `_scan_once`, so analysis latency never blocks scanning.
+
+**Security note:** the analysis prompt embeds untrusted token metadata (names,
+bios, URLs scraped from DexScreener), so treat every verdict as advisory — a
+hostile token's website can try to talk the model into a bullish verdict. Never
+wire the `token_analysis` channel to automated buying. Keep the tool allow-list
+web-only: adding `Read`/`Glob`/`Grep` would let a prompt-injected session read
+local files (`.env` holds private keys) with `WebFetch` available to exfiltrate
+them. If you must grant file tools, point `CLAUDE_CODE_WORKDIR` at a clean
+directory.
+
 ### Development
 
 Run individual agents:
