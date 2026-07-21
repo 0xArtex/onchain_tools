@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     solana: bool = Field(default=True)
     base: bool = Field(default=True)
     bsc: bool = Field(default=True)
+    robinhood: bool = Field(default=True)
 
     # Filtering thresholds. Defaults preserve prior hardcoded behavior.
     launch_min_liquidity: float = Field(default=6000.0)
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
 
     # Holdings data providers for the smart-wallet filter.
     helius_api_key: str | None = Field(default=None)   # Solana holdings
-    alchemy_api_key: str | None = Field(default=None)  # Base/BSC holdings
+    alchemy_api_key: str | None = Field(default=None)  # Base/BSC/Robinhood holdings
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="allow")
 

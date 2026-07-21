@@ -34,6 +34,8 @@ EXPLORERS = {
     "base": "https://basescan.org/tx/",
 }
 
+# Robinhood Chain (4663) is deliberately absent: Odos doesn't route it, so
+# robinhood alerts render no Buy button (is_configured -> False).
 ODOS_CHAIN_IDS = {"bsc": 56, "base": 8453}
 EVM_RPCS = {
     "bsc": "https://bsc-dataseed1.binance.org",

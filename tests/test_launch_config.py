@@ -7,20 +7,27 @@ from app.agents.launch_monitor.agent import LaunchConfig, LaunchMonitorAgent
 def test_all_chains_enabled_by_default():
     cfg = LaunchConfig()
     # Order is preserved as defined in _ALL_CHAINS
-    assert cfg.CHAINS == ["bsc", "solana", "base"]
+    assert cfg.CHAINS == ["bsc", "solana", "base", "robinhood"]
 
 
 def test_disabling_one_chain_removes_only_that_chain(monkeypatch):
     monkeypatch.setattr(launch_agent.settings, "bsc", False)
     cfg = LaunchConfig()
     assert "bsc" not in cfg.CHAINS
-    assert cfg.CHAINS == ["solana", "base"]
+    assert cfg.CHAINS == ["solana", "base", "robinhood"]
+
+
+def test_disabling_robinhood_removes_only_robinhood(monkeypatch):
+    monkeypatch.setattr(launch_agent.settings, "robinhood", False)
+    cfg = LaunchConfig()
+    assert cfg.CHAINS == ["bsc", "solana", "base"]
 
 
 def test_disabling_all_chains_yields_empty_list(monkeypatch):
     monkeypatch.setattr(launch_agent.settings, "solana", False)
     monkeypatch.setattr(launch_agent.settings, "base", False)
     monkeypatch.setattr(launch_agent.settings, "bsc", False)
+    monkeypatch.setattr(launch_agent.settings, "robinhood", False)
     cfg = LaunchConfig()
     assert cfg.CHAINS == []
 

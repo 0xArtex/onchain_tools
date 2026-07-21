@@ -4,7 +4,7 @@
 
 ## Flow
 
-1. `LaunchMonitorAgent` finds a new Base/Solana/BSC token that passes scanner filters.
+1. `LaunchMonitorAgent` finds a new Base/Solana/BSC/Robinhood Chain token that passes scanner filters.
 2. The normal Telegram group alert is still sent when `ENABLE_TELEGRAM=true`.
 3. `_forward_to_abot()` posts a `new_token_alert` JSON payload to `ABOT_WEBHOOK_URL`.
 4. Hermes should load/use `token-research`, `x-research`, and `agents-infra`:

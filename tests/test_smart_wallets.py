@@ -173,6 +173,14 @@ def test_below_threshold_fails_open_when_data_incomplete(monkeypatch):
 
 
 # ── refresh ──────────────────────────────────────────────────────────
+def test_alchemy_networks_cover_every_evm_chain():
+    # Every EVM chain the tracker refreshes needs an Alchemy network slug, or
+    # _fetch_evm_holdings KeyErrors on it.
+    for chain in sw._EVM_CHAINS:
+        assert chain in sw._ALCHEMY_NETWORKS
+    assert sw._ALCHEMY_NETWORKS["robinhood"] == "robinhood-mainnet"
+
+
 def test_refresh_builds_map_and_marks_health(monkeypatch):
     t = _make(monkeypatch, launch_smart_wallets=f"{SOL} {EVM}", helius_api_key="h", alchemy_api_key="a")
 
@@ -189,8 +197,32 @@ def test_refresh_builds_map_and_marks_health(monkeypatch):
     assert t._healthy["solana"] is True
     assert t._healthy["base"] is True
     assert t._healthy["bsc"] is True            # call succeeded even though empty
+    assert t._healthy["robinhood"] is True      # EVM wallets are checked here too
     assert SOL in t._map["solana"]["MINT_A"]
     assert EVM in t._map["base"][TOKEN_EVM]
+
+
+def test_refresh_skips_chains_disabled_in_env(monkeypatch):
+    # ROBINHOOD=false must disable the chain end to end: the scan loop skips it
+    # AND the tracker must not burn Alchemy quota polling holdings there.
+    monkeypatch.setattr(sw.settings, "robinhood", False)
+    t = _make(monkeypatch, launch_smart_wallets=f"{SOL} {EVM}", helius_api_key="h", alchemy_api_key="a")
+
+    fetched_chains = []
+
+    async def fake_sol(w):
+        return set()
+
+    async def fake_evm(chain, w):
+        fetched_chains.append(chain)
+        return set()
+
+    t._fetch_solana_holdings = fake_sol
+    t._fetch_evm_holdings = fake_evm
+    asyncio.run(t.refresh_if_stale())
+
+    assert "robinhood" not in fetched_chains
+    assert set(fetched_chains) == {"base", "bsc"}
 
 
 def test_refresh_failure_marks_chain_unhealthy_and_fails_open(monkeypatch):

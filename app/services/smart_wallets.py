@@ -7,7 +7,8 @@ already in.
 
 Data sources (current holdings):
   - Solana : Helius RPC ``getTokenAccountsByOwner`` (needs HELIUS_API_KEY)
-  - EVM    : Alchemy ``alchemy_getTokenBalances`` on Base + BNB (needs ALCHEMY_API_KEY)
+  - EVM    : Alchemy ``alchemy_getTokenBalances`` on Base + BNB + Robinhood Chain
+             (needs ALCHEMY_API_KEY)
 
 Design notes:
   - OFF by default: if no wallets are configured the tracker is disabled and the
@@ -39,8 +40,13 @@ _SOL_TOKEN_PROGRAMS = [
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
 ]
 # launch-monitor chain id -> Alchemy network slug
-_ALCHEMY_NETWORKS = {"base": "base-mainnet", "bsc": "bnb-mainnet"}
-_EVM_CHAINS = ("base", "bsc")
+_ALCHEMY_NETWORKS = {
+    "base": "base-mainnet",
+    "bsc": "bnb-mainnet",
+    "robinhood": "robinhood-mainnet",
+}
+_EVM_CHAINS = ("base", "bsc", "robinhood")
+_ALL_CHAINS = ("solana", *_EVM_CHAINS)
 _ZERO_HEX = {"", "0x", "0x0", "0x" + "0" * 64}
 
 
@@ -87,6 +93,10 @@ class SmartWalletTracker:
         self.refresh_seconds = int(getattr(settings, "launch_smart_wallet_refresh_seconds", 60) or 60)
         self.helius_key = getattr(settings, "helius_api_key", None)
         self.alchemy_key = getattr(settings, "alchemy_api_key", None)
+        # Chains the launch monitor actually scans (per-chain .env toggles).
+        # A disabled chain is never queried by the scan loop, so skip its
+        # holdings fetches too instead of burning provider quota on it.
+        self.active_chains = tuple(c for c in _ALL_CHAINS if getattr(settings, c, True))
 
         self.has_solana = bool(self.wallets["solana"])
         self.has_evm = bool(self.wallets["evm"])
@@ -149,21 +159,23 @@ class SmartWalletTracker:
             self._last_refresh = time.monotonic()
 
     async def _refresh(self) -> None:
-        new_map: dict[str, dict[str, set[str]]] = {"solana": {}, "base": {}, "bsc": {}}
+        new_map: dict[str, dict[str, set[str]]] = {c: {} for c in _ALL_CHAINS}
         # (chain, wallet, coro) jobs
         jobs: list[tuple[str, str, "asyncio.Future"]] = []
-        if self.has_solana and self.helius_key:
+        if self.has_solana and self.helius_key and "solana" in self.active_chains:
             for w in self.wallets["solana"]:
                 jobs.append(("solana", w, self._fetch_solana_holdings(w)))
         if self.has_evm and self.alchemy_key:
             for chain in _EVM_CHAINS:
+                if chain not in self.active_chains:
+                    continue
                 for w in self.wallets["evm"]:
                     jobs.append((chain, w, self._fetch_evm_holdings(chain, w)))
 
         results = await asyncio.gather(*(c for _, _, c in jobs), return_exceptions=True)
 
-        ok_counts: dict[str, int] = {"solana": 0, "base": 0, "bsc": 0}
-        err_counts: dict[str, int] = {"solana": 0, "base": 0, "bsc": 0}
+        ok_counts: dict[str, int] = {c: 0 for c in _ALL_CHAINS}
+        err_counts: dict[str, int] = {c: 0 for c in _ALL_CHAINS}
         for (chain, wallet, _), res in zip(jobs, results):
             if isinstance(res, Exception):
                 err_counts[chain] += 1
@@ -179,7 +191,7 @@ class SmartWalletTracker:
         # set is the full picture and a below-threshold token may be dropped.
         self._complete = {c: (ok_counts[c] > 0 and err_counts[c] == 0) for c in new_map}
         self._map = new_map
-        active = [c for c in ("solana", "base", "bsc") if ok_counts[c] or err_counts[c]]
+        active = [c for c in _ALL_CHAINS if ok_counts[c] or err_counts[c]]
         logger.info(
             "SmartWallets refresh: "
             + ", ".join(f"{c}: {ok_counts[c]} ok/{err_counts[c]} err, {len(new_map[c])} tokens" for c in active)

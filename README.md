@@ -17,7 +17,7 @@ app/
 
 ### Features
 **Launch Monitor Agent** ✅
-- Monitors BSC, Solana, and Base chains for new token launches
+- Monitors BSC, Solana, Base, and Robinhood Chain for new token launches
 - Filters by liquidity, market cap, age, and social presence
 - Fetches Twitter follower counts
 - Publishes alerts via message queue
@@ -159,6 +159,7 @@ can all be overridden via `.env` (defaults shown):
 | `SOLANA` | `true` | Scan Solana (set `false` to disable) |
 | `BASE` | `true` | Scan Base (set `false` to disable) |
 | `BSC` | `true` | Scan BSC (set `false` to disable) |
+| `ROBINHOOD` | `true` | Scan Robinhood Chain (set `false` to disable) |
 | `LAUNCH_MIN_LIQUIDITY` | `6000` | Minimum pool liquidity (USD) to alert |
 | `LAUNCH_MIN_MARKET_CAP` | `0` | Minimum market cap (USD); `0` = off |
 | `LAUNCH_MAX_MARKET_CAP` | `0` | Maximum market cap (USD); `0` = off |
@@ -184,13 +185,14 @@ in `app/services/smart_wallets.py` and applied as a filter step in `_scan_once`.
 | `LAUNCH_MIN_SMART_WALLET_PCT` | `0` | Also require ≥X% of tracked wallets (per chain). `0` = off |
 | `LAUNCH_SMART_WALLET_REFRESH_SECONDS` | `60` | How often to refresh wallet holdings |
 | `HELIUS_API_KEY` | _(empty)_ | Solana holdings source (required if you list Solana wallets) |
-| `ALCHEMY_API_KEY` | _(empty)_ | Base/BSC holdings source (required if you list EVM wallets) |
+| `ALCHEMY_API_KEY` | _(empty)_ | Base/BSC/Robinhood holdings source (required if you list EVM wallets) |
 
 How it works: each scan, the tracker refreshes the current token holdings of your
 wallets (Solana via Helius `getTokenAccountsByOwner`, EVM via Alchemy
-`alchemy_getTokenBalances` on Base + BNB) and builds a `chain → {token → wallets}`
-map. A candidate token is dropped unless enough of your wallets hold it. Address
-type (Solana vs EVM) is auto-detected; EVM wallets are checked on both Base and BSC.
+`alchemy_getTokenBalances` on Base + BNB + Robinhood Chain) and builds a
+`chain → {token → wallets}` map. A candidate token is dropped unless enough of your
+wallets hold it. Address type (Solana vs EVM) is auto-detected; EVM wallets are
+checked on Base, BSC, and Robinhood Chain.
 
 **Fail-open:** if a provider key is missing or a refresh errors, that chain is
 treated as "unknown" and tokens pass through (with a warning) — you never get

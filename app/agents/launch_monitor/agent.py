@@ -27,7 +27,8 @@ class LaunchConfig:
     """
 
     # Supported chains, in scan order. Each can be toggled off via .env.
-    _ALL_CHAINS = ["bsc", "solana", "base"]
+    # "robinhood" is Robinhood Chain (Arbitrum Orbit L2, DexScreener slug "robinhood").
+    _ALL_CHAINS = ["bsc", "solana", "base", "robinhood"]
 
     def __init__(self) -> None:
         self.CHAINS = self._resolve_enabled_chains()
@@ -48,6 +49,7 @@ class LaunchConfig:
             "solana": settings.solana,
             "base": settings.base,
             "bsc": settings.bsc,
+            "robinhood": settings.robinhood,
         }
         return [chain for chain in cls._ALL_CHAINS if toggles.get(chain, True)]
 
@@ -581,7 +583,7 @@ class LaunchMonitorAgent(BaseAgent):
         if not self.config.CHAINS:
             logger.warning(
                 "⚠️ No chains enabled — every chain is disabled in .env "
-                "(SOLANA/BASE/BSC). The monitor will not scan anything."
+                "(SOLANA/BASE/BSC/ROBINHOOD). The monitor will not scan anything."
             )
         logger.info(self.smart_wallets.describe())
         # Start monitoring loop
@@ -1011,7 +1013,7 @@ class LaunchMonitorAgent(BaseAgent):
                     message, image = self.telegram.format_token_message(token_data)
                     logger.info(f"Telegram HTML:\n{message}")
                     logger.info(f"Twitter URL: {twitter_url!r} | Dex URL: {token_data['dex_url']!r} | Image: {image!r}")
-                    
+
                     # Build buy button if wallet is configured for this chain
                     reply_markup = None
                     if base_token_address and self.buyer.is_configured(chain):
@@ -1022,9 +1024,9 @@ class LaunchMonitorAgent(BaseAgent):
                                 "callback_data": cb_data,
                             }]]
                         }
-                    
+
                     await self.telegram.send_message(message, image, reply_markup=reply_markup)
-                
+
                 # Forward to a-bot via webhook
                 await self._forward_to_abot(token_data)
 
