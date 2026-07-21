@@ -198,6 +198,43 @@ checked on Base, BSC, and Robinhood Chain.
 treated as "unknown" and tokens pass through (with a warning) — you never get
 silent zero-alerts. Need a Helius key? See the `helius` skill (signup ~1 USDC).
 
+#### CabalSpy legitimacy score (optional)
+
+Enrich alerts with [CabalSpy](https://cabalspy.xyz/) labeled-wallet data: which
+of their tracked **KOL / Smart Money** wallets already bought the token, and a
+derived 0–100 legitimacy score — the more (and the more still-holding) smart
+buyers, the higher the score. Runs **only for chains in `CABALSPY_CHAINS`**
+(default: Robinhood Chain only) and only for tokens that already passed every
+other filter, so the free tier (10,000 credits/month ≈ 1,000 calls) goes far.
+Fail-open: an API error never suppresses an alert.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CABALSPY_API_KEY` | _(empty)_ | Master switch. Free self-serve key at apidashboard.cabalspy.xyz |
+| `CABALSPY_CHAINS` | `robinhood` | Comma-separated launch-monitor chain ids to enrich |
+| `CABALSPY_WALLET_TYPE` | _(empty)_ | Restrict to one label (`kol`/`smart`/`whale`); empty = all |
+| `CABALSPY_MIN_BUYERS` | `0` | Require ≥N labeled buyers to alert; `0` = enrich only |
+| `CABALSPY_MAX_CHECKS` | `6` | Max metered API calls per token (the min-buyers gate re-checks pending tokens) |
+| `CABALSPY_TX_LIMIT` | `100` | Newest labeled transactions examined per token |
+
+Credit math: in enrich-only mode each alerted token costs exactly one call
+(10 credits). With the min-buyers gate on, a token that stays below the bar is
+re-checked as its 5-minute cache expires while it remains in the lookback
+window, capped at `CABALSPY_MAX_CHECKS` calls per token.
+
+Scoring (`app/services/cabalspy.py`): each distinct labeled buyer is worth
+KOL/smart = 3 pts, whale/insider = 2 pts, any other label = 1 pt, halved once
+they exit their position (a buyer's current state comes from their newest
+transaction, so a KOL who bought and dumped shows as "sold" and scores half);
+`score = min(100, points × 10)` — so ~3 quality still-holding buyers ≈ 90–100.
+(`insider` shows up in the data but is not a `CABALSPY_WALLET_TYPE` filter
+value.)
+The score, buyer counts, and top buyers appear in the Telegram alert, the
+Hermes payload (`token.cabalspy`), and the Claude Code analysis prompt.
+CabalSpy calls Robinhood Chain `rh`; the service auto-falls back to the
+`robinhood` alias if the REST layer rejects `rh` (their docs lag the Jul 2026
+Robinhood launch).
+
 #### Claude Code analysis (optional)
 
 Second-stage research through your **local Claude Code install**, parallel to the

@@ -15,6 +15,7 @@ from ..base import BaseAgent
 from ...config import settings
 from ...logging_config import logger
 from ...services.buyer import BuyService, BuyResult
+from ...services.cabalspy import CabalSpyService
 from ...services.claude_code import AnalysisResult, ClaudeCodeAnalyzer
 from ...services.smart_wallets import SmartWalletTracker
 
@@ -253,6 +254,29 @@ class TelegramService:
         sw_count = token.get("smart_wallet_count")
         if sw_count:
             message += f"🧠 <b>Smart wallets holding:</b> {sw_count}\n"
+
+        # CabalSpy labeled buyers (only shown when enrichment ran)
+        cabal = token.get("cabalspy")
+        if cabal:
+            parts = []
+            if cabal.get("kol_buyers"):
+                parts.append(f"{cabal['kol_buyers']} KOL")
+            if cabal.get("smart_buyers"):
+                parts.append(f"{cabal['smart_buyers']} smart")
+            if cabal.get("other_buyers"):
+                parts.append(f"{cabal['other_buyers']} other")
+            label = " + ".join(parts) if parts else "no labeled buyers"
+            message += f"🕵️ <b>CabalSpy:</b> {cabal.get('score', 0)}/100 ({label})\n"
+            type_emoji = {"kol": "👑", "smart": "🧠", "whale": "🐋", "insider": "🕶"}
+            for b in (cabal.get("buyers") or [])[:5]:
+                who = self._esc(b.get("name") or (b.get("wallet") or "")[:10])
+                tw = b.get("twitter") or ""
+                hold = "✊" if b.get("still_holding", True) else "💨 sold"
+                emoji = type_emoji.get(b.get("type", ""), "👤")
+                line = f"  {emoji} {who}"
+                if tw:
+                    line += f" (@{self._esc(tw.lstrip('@'))})"
+                message += f"{line} {hold}\n"
 
         # Rug check section (Solana only)
         rug_check = token.get("rug_check")
@@ -559,6 +583,7 @@ class LaunchMonitorAgent(BaseAgent):
         )
         self.buyer = BuyService()
         self.smart_wallets = SmartWalletTracker()
+        self.cabalspy = CabalSpyService()
         self.claude_code = ClaudeCodeAnalyzer()
         self._monitoring = False
         self._polling = False
@@ -592,6 +617,7 @@ class LaunchMonitorAgent(BaseAgent):
                 "(SOLANA/BASE/BSC/ROBINHOOD). The monitor will not scan anything."
             )
         logger.info(self.smart_wallets.describe())
+        logger.info(self.cabalspy.describe())
         logger.info(self.claude_code.describe())
         # Start monitoring loop
         self._monitoring = True
@@ -969,6 +995,18 @@ class LaunchMonitorAgent(BaseAgent):
                             f"🧠 {base_sym}: {n_holders}/{required} smart wallet(s) holding on {chain}"
                         )
 
+                # CabalSpy labeled-buyer enrichment (optional; robinhood-first).
+                # One credit-metered API call per surviving candidate; fails
+                # open so a CabalSpy outage never suppresses alerts.
+                cabal_report = None
+                if base_token_address and self.cabalspy.covers(chain):
+                    cabal_report = await self.cabalspy.analyze(chain, base_token_address)
+                    if not self.cabalspy.passes(cabal_report):
+                        bump("not_enough_cabal_buyers")
+                        continue
+                    if cabal_report is not None:
+                        logger.info(f"🕵️ {base_sym}: CabalSpy {cabal_report.summary()}")
+
                 # Passed all checks - publish new token alert
                 found_count += 1
                 
@@ -1008,6 +1046,7 @@ class LaunchMonitorAgent(BaseAgent):
                     "red_flags": red_flags,
                     "smart_wallet_count": len(smart_holders) if smart_holders is not None else None,
                     "smart_wallet_holders": sorted(smart_holders) if smart_holders else [],
+                    "cabalspy": cabal_report.as_dict() if cabal_report else None,
                     "dex_url": pair.get("url") or f"https://dexscreener.com/{chain}/{pair_id}",
                     "created_at": datetime.fromtimestamp(created_ms / 1000).isoformat() if created_ms else None,
                     "age_minutes": int((now - created_ms) / 60000) if created_ms else None,
@@ -1105,6 +1144,13 @@ class LaunchMonitorAgent(BaseAgent):
         if flags:
             normalized_flags = [f[0] if isinstance(f, (list, tuple)) and f else str(f) for f in flags]
             summary_lines.append("Red flags: " + ", ".join(normalized_flags))
+        cabal = token_data.get("cabalspy")
+        if cabal:
+            summary_lines.append(
+                f"CabalSpy legitimacy: {cabal.get('score', 0)}/100 "
+                f"({cabal.get('kol_buyers', 0)} KOL, {cabal.get('smart_buyers', 0)} smart buyers, "
+                f"{cabal.get('still_holding', 0)}/{cabal.get('total_buyers', 0)} still holding)"
+            )
         summary_lines.append(f"DexScreener: {dex}")
 
         instructions = "\n".join([
@@ -1158,6 +1204,7 @@ class LaunchMonitorAgent(BaseAgent):
                     "count": sw_count,
                     "holders": sw_holders,
                 },
+                "cabalspy": token_data.get("cabalspy"),
             },
             "raw_token": token_data,
         }

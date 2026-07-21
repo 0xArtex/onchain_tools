@@ -154,6 +154,19 @@ class ClaudeCodeAnalyzer:
             lines.append("Scanner red flags: " + ", ".join(normalized))
         if sw_count:
             lines.append(f"Tracked smart wallets holding: {sw_count}")
+        cabal = token_data.get("cabalspy")
+        if cabal:
+            names = ", ".join(
+                f"{b.get('name') or b.get('wallet', '')[:10]} ({b.get('type', '?')}"
+                f"{', sold' if not b.get('still_holding', True) else ''})"
+                for b in (cabal.get("buyers") or [])[:8]
+            )
+            lines.append(
+                f"CabalSpy labeled buyers: legitimacy {cabal.get('score', 0)}/100 — "
+                f"{cabal.get('kol_buyers', 0)} KOL, {cabal.get('smart_buyers', 0)} smart, "
+                f"{cabal.get('still_holding', 0)}/{cabal.get('total_buyers', 0)} still holding"
+                + (f". Buyers: {names}" if names else "")
+            )
         lines += [
             f"DexScreener: {token_data.get('dex_url', '')}",
             "",

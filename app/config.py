@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     helius_api_key: str | None = Field(default=None)   # Solana holdings
     alchemy_api_key: str | None = Field(default=None)  # Base/BSC/Robinhood holdings
 
+    # ── CabalSpy labeled-wallet enrichment (optional; OFF without key) ──
+    # Score alerts by which CabalSpy-labeled KOL/smart wallets already bought
+    # the token. Free API key: https://apidashboard.cabalspy.xyz/register
+    cabalspy_api_key: str | None = Field(default=None)
+    cabalspy_chains: str = Field(default="robinhood")  # comma-separated; start small
+    cabalspy_wallet_type: str = Field(default="")      # kol|smart|whale; empty = all labels
+    cabalspy_min_buyers: int = Field(default=0)        # ≥N labeled buyers to alert; 0 = enrich only
+    cabalspy_tx_limit: int = Field(default=100)        # newest labeled txs examined per token
+    cabalspy_max_checks: int = Field(default=6)        # metered API calls per token (gate re-checks)
+
     # ── Claude Code analysis (optional; OFF by default) ─────────────
     # Second-stage token research through the LOCAL Claude Code CLI
     # (headless `claude -p`), parallel to the Hermes webhook forwarder.
