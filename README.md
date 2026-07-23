@@ -178,6 +178,12 @@ Only alert on tokens that tracked "smart money" wallets currently hold. **Off by
 default** — list no wallets and the monitor behaves exactly as before. Implemented
 in `app/services/smart_wallets.py` and applied as a filter step in `_scan_once`.
 
+> Don't have your own wallet list? The CabalSpy section below does this with
+> **their** curated KOL/Smart-Money wallets instead — set `CABALSPY_MIN_BUYERS=1`
+> and no addresses or Helius/Alchemy keys are needed (one CabalSpy call per
+> candidate answers "did any labeled wallet buy this?"). The two filters compose:
+> this one tracks wallets you choose, CabalSpy covers the wallets they label.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `LAUNCH_SMART_WALLETS` | _(empty)_ | Solana and/or EVM (`0x…`) addresses, comma/space/newline separated. Empty = filter off |
