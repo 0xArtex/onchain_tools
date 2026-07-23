@@ -56,6 +56,16 @@ class LaunchConfig:
         return [chain for chain in cls._ALL_CHAINS if toggles.get(chain, True)]
 
 
+# Wallet explorer URLs per launch-monitor chain id — used to link CabalSpy
+# buyer labels (anonymous "smartNN" wallets especially) to their history.
+WALLET_EXPLORERS = {
+    "solana": "https://solscan.io/account/",
+    "bsc": "https://bscscan.com/address/",
+    "base": "https://basescan.org/address/",
+    "robinhood": "https://robinhoodchain.blockscout.com/address/",
+}
+
+
 class TelegramService:
     """Service for sending Telegram notifications"""
     
@@ -268,8 +278,14 @@ class TelegramService:
             label = " + ".join(parts) if parts else "no labeled buyers"
             message += f"🕵️ <b>CabalSpy:</b> {cabal.get('score', 0)}/100 ({label})\n"
             type_emoji = {"kol": "👑", "smart": "🧠", "whale": "🐋", "insider": "🕶"}
+            explorer = WALLET_EXPLORERS.get(token.get("chain", ""))
             for b in (cabal.get("buyers") or [])[:5]:
-                who = self._esc(b.get("name") or (b.get("wallet") or "")[:10])
+                wallet = b.get("wallet") or ""
+                who = self._esc(b.get("name") or wallet[:10])
+                # Anonymous labels ("smartNN") carry no identity — link them to
+                # the wallet's explorer page so the label is inspectable.
+                if wallet and explorer:
+                    who = f'<a href="{self._esc_url(explorer + wallet)}">{who}</a>'
                 tw = b.get("twitter") or ""
                 hold = "✊" if b.get("still_holding", True) else "💨 sold"
                 emoji = type_emoji.get(b.get("type", ""), "👤")

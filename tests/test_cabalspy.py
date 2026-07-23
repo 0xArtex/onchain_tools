@@ -318,7 +318,8 @@ def test_telegram_message_includes_cabalspy_section():
     message, _ = tg.format_token_message(token)
     assert "CabalSpy:" in message and "75/100" in message
     assert "1 KOL + 1 smart" in message
-    assert "👑 Alpha (@alpha) ✊" in message
+    # Buyer names link to the wallet's explorer page for the alert's chain
+    assert '👑 <a href="https://robinhoodchain.blockscout.com/address/0xaaa">Alpha</a> (@alpha) ✊' in message
     assert "Beta &lt;x&gt;" in message  # HTML-escaped
     assert "💨 sold" in message
 
