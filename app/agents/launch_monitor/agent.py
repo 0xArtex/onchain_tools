@@ -597,19 +597,18 @@ class LaunchMonitorAgent(BaseAgent):
         logger.info(f"Using Redis cache with TTL: {self._cache_ttl}s ({self._cache_ttl/3600:.1f} hours)")
         # Log the resolved (env-driven) configuration so it's clear what's active
         disabled = [c for c in self.config._ALL_CHAINS if c not in self.config.CHAINS]
+        # NOTE: loguru formats with {}-style .format(), not stdlib %-style —
+        # passing %s args silently prints the raw placeholders.
+        disabled_note = f" (disabled: {[c.upper() for c in disabled]})" if disabled else ""
         logger.info(
-            "Config: chains=%s%s | min_liquidity=$%s | min_mcap=%s | max_mcap=%s | "
-            "require_twitter=%s | require_website=%s | min_followers=%s | poll=%ss | lookback=%sh",
-            [c.upper() for c in self.config.CHAINS],
-            f" (disabled: {[c.upper() for c in disabled]})" if disabled else "",
-            f"{self.config.MIN_LIQUIDITY:,.0f}",
-            self.config.MIN_MARKET_CAP or "off",
-            self.config.MAX_MARKET_CAP or "off",
-            self.config.REQUIRE_TWITTER,
-            self.config.REQUIRE_WEBSITE,
-            self.config.MIN_TWITTER_FOLLOWERS or "off",
-            self.config.POLL_SECONDS,
-            self.config.LOOKBACK_HOURS,
+            f"Config: chains={[c.upper() for c in self.config.CHAINS]}{disabled_note} | "
+            f"min_liquidity=${self.config.MIN_LIQUIDITY:,.0f} | "
+            f"min_mcap={self.config.MIN_MARKET_CAP or 'off'} | "
+            f"max_mcap={self.config.MAX_MARKET_CAP or 'off'} | "
+            f"require_twitter={self.config.REQUIRE_TWITTER} | "
+            f"require_website={self.config.REQUIRE_WEBSITE} | "
+            f"min_followers={self.config.MIN_TWITTER_FOLLOWERS or 'off'} | "
+            f"poll={self.config.POLL_SECONDS}s | lookback={self.config.LOOKBACK_HOURS}h"
         )
         if not self.config.CHAINS:
             logger.warning(
