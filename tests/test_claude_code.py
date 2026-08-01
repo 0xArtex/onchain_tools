@@ -316,6 +316,51 @@ def test_run_claude_analysis_without_raw_alert_sends_standalone_context(monkeypa
     assert TOKEN["token_address"] in replies[0][1]
 
 
+def test_run_claude_analysis_triggers_palmyr_call_for_not_skip(monkeypatch):
+    from app.agents.launch_monitor.agent import LaunchMonitorAgent
+
+    agent = LaunchMonitorAgent()
+    published = []
+
+    class FakeMQ:
+        async def publish(self, channel, payload):
+            published.append((channel, payload))
+
+    class FakeAnalyzer:
+        enabled = True
+
+        async def analyze(self, token_data):
+            return AnalysisResult(ok=True, verdict="WATCH", confidence=55, summary="Worth waking up.")
+
+    calls = []
+
+    class FakePalmyrCall:
+        enabled = True
+
+        async def notify(self, result, token_data):
+            calls.append((result.verdict, token_data["base_symbol"]))
+            class R:
+                ok = True
+                skipped = False
+                error = ""
+            return R()
+
+    async def fake_reply(chat_id, text, reply_to=None):
+        pass
+
+    agent.mq = FakeMQ()
+    agent.claude_code = FakeAnalyzer()
+    agent.palmyr_call = FakePalmyrCall()
+    agent.telegram.enabled = True
+    agent.telegram.chat_id = "42"
+    agent.telegram.send_reply = fake_reply
+
+    asyncio.run(agent._run_claude_analysis(TOKEN, None))
+
+    assert published and published[0][0] == "token_analysis"
+    assert calls == [("WATCH", "TEST")]
+
+
 def test_run_claude_analysis_failed_run_publishes_but_no_telegram(monkeypatch):
     from app.agents.launch_monitor.agent import LaunchMonitorAgent
 

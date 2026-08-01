@@ -30,6 +30,14 @@ services:
       CLAUDE_CODE_MODEL: claude-opus-4-8
       CLAUDE_CODE_EFFORT: max
       CLAUDE_CODE_MAX_BUDGET_USD: "2.0"
+      # Optional urgent phone wake-up via Palmyr CLI. Needs a Palmyr-owned
+      # source number id and Z's E.164 destination number before it can call.
+      PALMYR_CALL_ENABLED: "false"
+      PALMYR_CALL_VERDICTS: WATCH,APE,BUY
+      PALMYR_CALL_BIN: /usr/bin/node
+      PALMYR_CALL_SCRIPT: /usr/lib/node_modules/@palmyr/cli/dist/cli.js
+      PALMYR_CALL_PHONE_ID: ""
+      PALMYR_CALL_TO: ""
     volumes:
       # Claude Code native binary + auth/config from the host. The app allow-lists
       # only WebSearch/WebFetch for untrusted token prompts.
@@ -39,6 +47,10 @@ services:
       # Make the repo's research skills visible to Claude Code.
       - ./skills/token-research:/root/.claude/skills/token-research:ro
       - ./skills/x-research:/root/.claude/skills/x-research:ro
+      # Palmyr CLI + local wallet/config for optional voice calls.
+      - /usr/bin/node:/usr/bin/node:ro
+      - /usr/lib/node_modules/@palmyr/cli:/usr/lib/node_modules/@palmyr/cli:ro
+      - /root/.palmyr:/root/.palmyr
     command: ["python", "-m", "app.main", "agent", "launch"]
 
 volumes:

@@ -17,6 +17,7 @@ from ...logging_config import logger
 from ...services.buyer import BuyService, BuyResult
 from ...services.cabalspy import CabalSpyService
 from ...services.claude_code import AnalysisResult, ClaudeCodeAnalyzer
+from ...services.palmyr_call import PalmyrCallNotifier
 from ...services.smart_wallets import SmartWalletTracker
 
 
@@ -601,6 +602,7 @@ class LaunchMonitorAgent(BaseAgent):
         self.smart_wallets = SmartWalletTracker()
         self.cabalspy = CabalSpyService()
         self.claude_code = ClaudeCodeAnalyzer()
+        self.palmyr_call = PalmyrCallNotifier()
         self._monitoring = False
         self._polling = False
         # Redis SETEX requires an integer TTL, but LOOKBACK_HOURS may be a float
@@ -634,6 +636,7 @@ class LaunchMonitorAgent(BaseAgent):
         logger.info(self.smart_wallets.describe())
         logger.info(self.cabalspy.describe())
         logger.info(self.claude_code.describe())
+        logger.info(self.palmyr_call.describe())
         # Start monitoring loop
         self._monitoring = True
         self._polling = True
@@ -1309,6 +1312,14 @@ class LaunchMonitorAgent(BaseAgent):
             text = self._format_claude_verdict(result, token_data if not tg_msg else None)
             reply_to = tg_msg.get("message_id") if tg_msg else None
             await self.telegram.send_reply(self.telegram.chat_id, text, reply_to=reply_to)
+
+        if self.palmyr_call.enabled:
+            try:
+                call_result = await self.palmyr_call.notify(result, token_data)
+                if not call_result.ok and not call_result.skipped:
+                    logger.warning(f"PalmyrCall: failed for ${sym}: {call_result.error}")
+            except Exception as e:
+                logger.warning(f"PalmyrCall: crashed for ${sym}: {e}")
 
     async def _publish_analysis(self, token_data: dict, sym: str, result: AnalysisResult) -> None:
         await self.mq.publish("token_analysis", {

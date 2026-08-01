@@ -101,6 +101,16 @@ class Settings(BaseSettings):
     claude_code_effort: str = Field(default="")   # low|medium|high|xhigh|max; empty = CLI default
     claude_code_workdir: str = Field(default="")  # empty = monitor's cwd
 
+    # ── Palmyr urgent voice calls (optional; OFF by default) ─────────
+    palmyr_call_enabled: bool = Field(default=False)
+    palmyr_call_phone_id: str = Field(default="")  # source Palmyr number id
+    palmyr_call_to: str = Field(default="")        # operator E.164 number
+    palmyr_call_verdicts: str = Field(default="WATCH,APE,BUY")
+    palmyr_call_min_confidence: int = Field(default=0)
+    palmyr_call_bin: str = Field(default="palmyr")
+    palmyr_call_script: str = Field(default="")    # set when invoking via node <script>
+    palmyr_call_timeout_seconds: int = Field(default=20)
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="allow")
 
 

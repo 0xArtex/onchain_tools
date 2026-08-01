@@ -11,6 +11,7 @@
    - `SKIP`: do not message Z and do not write to watchlist.
    - `WATCH`: DM Z privately and append to the monthly watchlist.
    - `APE` / `BUY`: DM Z, append to watchlist, and call Z via AgentOS.
+5. If `PALMYR_CALL_ENABLED=true`, the local scanner can also call Z directly with `palmyr phone call --tts` for configured researched verdicts (`WATCH,APE,BUY` by default).
 
 ## Local Docker on the Hermes host (no public exposure)
 

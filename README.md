@@ -268,6 +268,12 @@ For verdict-only Telegram delivery, keep `ENABLE_TELEGRAM=true` and set
 `ENABLE_RAW_TELEGRAM_ALERTS=false`. Raw scanner cards are suppressed, while the
 Claude Code verdict is sent as a standalone message with token context.
 
+For urgent voice wake-ups, set `PALMYR_CALL_ENABLED=true`,
+`PALMYR_CALL_PHONE_ID=<palmyr source number id>`, and `PALMYR_CALL_TO=<operator
+E.164 phone>`. By default it calls on any non-SKIP researched verdict
+(`WATCH,APE,BUY`) via `palmyr phone call --tts`; change `PALMYR_CALL_VERDICTS`
+or `PALMYR_CALL_MIN_CONFIDENCE` to make it stricter.
+
 Implemented in `app/services/claude_code.py`; a verdict fires as a background
 task from `_scan_once`, so analysis latency never blocks scanning.
 
