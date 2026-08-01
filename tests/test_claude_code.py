@@ -280,6 +280,42 @@ def test_run_claude_analysis_publishes_and_replies(monkeypatch):
     assert "APE" in replies[0][1] and "🦍" in replies[0][1]
 
 
+def test_run_claude_analysis_without_raw_alert_sends_standalone_context(monkeypatch):
+    from app.agents.launch_monitor.agent import LaunchMonitorAgent
+
+    agent = LaunchMonitorAgent()
+    published = []
+
+    class FakeMQ:
+        async def publish(self, channel, payload):
+            published.append((channel, payload))
+
+    class FakeAnalyzer:
+        enabled = True
+
+        async def analyze(self, token_data):
+            return AnalysisResult(ok=True, verdict="BUY", confidence=88, summary="Clear edge.")
+
+    replies = []
+
+    async def fake_reply(chat_id, text, reply_to=None):
+        replies.append((chat_id, text, reply_to))
+
+    agent.mq = FakeMQ()
+    agent.claude_code = FakeAnalyzer()
+    agent.telegram.enabled = True
+    agent.telegram.chat_id = "42"
+    agent.telegram.send_reply = fake_reply
+
+    asyncio.run(agent._run_claude_analysis(TOKEN, None))
+
+    assert published and published[0][0] == "token_analysis"
+    assert replies and replies[0][2] is None
+    assert "BUY" in replies[0][1]
+    assert "TEST" in replies[0][1]
+    assert TOKEN["token_address"] in replies[0][1]
+
+
 def test_run_claude_analysis_failed_run_publishes_but_no_telegram(monkeypatch):
     from app.agents.launch_monitor.agent import LaunchMonitorAgent
 

@@ -170,8 +170,11 @@ class ClaudeCodeAnalyzer:
         lines += [
             f"DexScreener: {token_data.get('dex_url', '')}",
             "",
-            "Use the /token-research skill if available, plus web search/fetch, to assess:",
-            "team/deployer history, holder distribution, liquidity lock, socials authenticity,",
+            "Mandatory route: Claude Opus analysis → X/Twitter research → operator verdict.",
+            "Use the /token-research and /x-research skills if available, plus WebSearch/WebFetch.",
+            "Before choosing a verdict, explicitly research X/Twitter for the project handle,",
+            "contract address, ticker, founder/dev claims, community flow, and obvious impersonators.",
+            "Assess team/deployer history, holder distribution, liquidity lock, socials authenticity,",
             "narrative strength, and momentum. Cross-check the contract address on-chain.",
             "",
             "Verdict rules:",

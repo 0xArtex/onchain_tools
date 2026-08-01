@@ -264,6 +264,10 @@ runs are billed against your Claude login.
 | `CLAUDE_CODE_EFFORT` | _(empty)_ | Optional reasoning effort: `low`–`max`; empty = CLI default |
 | `CLAUDE_CODE_BIN` / `CLAUDE_CODE_WORKDIR` | `claude` / _(empty)_ | CLI binary and working directory overrides |
 
+For verdict-only Telegram delivery, keep `ENABLE_TELEGRAM=true` and set
+`ENABLE_RAW_TELEGRAM_ALERTS=false`. Raw scanner cards are suppressed, while the
+Claude Code verdict is sent as a standalone message with token context.
+
 Implemented in `app/services/claude_code.py`; a verdict fires as a background
 task from `_scan_once`, so analysis latency never blocks scanning.
 

@@ -1071,7 +1071,11 @@ class LaunchMonitorAgent(BaseAgent):
                 
                 # Send Telegram notification
                 tg_msg = None
-                if self.telegram.enabled and getattr(settings, "enable_telegram", True):
+                if (
+                    self.telegram.enabled
+                    and getattr(settings, "enable_telegram", True)
+                    and getattr(settings, "enable_raw_telegram_alerts", True)
+                ):
                     message, image = self.telegram.format_token_message(token_data)
                     logger.info(f"Telegram HTML:\n{message}")
                     logger.info(f"Twitter URL: {twitter_url!r} | Dex URL: {token_data['dex_url']!r} | Image: {image!r}")
@@ -1302,7 +1306,7 @@ class LaunchMonitorAgent(BaseAgent):
             return  # failure already logged by the analyzer; keep Telegram quiet
 
         if self.telegram.enabled and getattr(settings, "enable_telegram", True):
-            text = self._format_claude_verdict(result)
+            text = self._format_claude_verdict(result, token_data if not tg_msg else None)
             reply_to = tg_msg.get("message_id") if tg_msg else None
             await self.telegram.send_reply(self.telegram.chat_id, text, reply_to=reply_to)
 
@@ -1329,7 +1333,7 @@ class LaunchMonitorAgent(BaseAgent):
             },
         })
 
-    def _format_claude_verdict(self, result: AnalysisResult) -> str:
+    def _format_claude_verdict(self, result: AnalysisResult, token_data: dict | None = None) -> str:
         """Format an analysis result as a Telegram HTML message."""
         esc = self.telegram._esc
         emoji = {"SKIP": "⏭️", "WATCH": "👀", "APE": "🦍", "BUY": "💰"}.get(result.verdict, "❓")
@@ -1337,6 +1341,16 @@ class LaunchMonitorAgent(BaseAgent):
             f"🤖 <b>Claude Code verdict:</b> {emoji} <b>{esc(result.verdict)}</b> "
             f"({result.confidence}% confidence)"
         ]
+        if token_data:
+            sym = token_data.get("base_symbol", "?")
+            chain = str(token_data.get("chain", "?")).upper()
+            token_address = token_data.get("token_address")
+            dex_url = token_data.get("dex_url")
+            lines.append(f"<b>Token:</b> ${esc(sym)} on {esc(chain)}")
+            if token_address:
+                lines.append(f"<code>{esc(token_address)}</code>")
+            if dex_url:
+                lines.append(f'<a href="{self.telegram._esc_url(dex_url)}">DexScreener</a>')
         if result.summary:
             lines.append(esc(result.summary))
         if result.reasons:

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = Field(default=None)
     telegram_chat_id: str | None = Field(default=None)
     enable_telegram: bool = Field(default=True)
+    enable_raw_telegram_alerts: bool = Field(default=True)
 
     # Webhook forwarder (OpenClaw a-bot)
     abot_webhook_url: str | None = Field(default=None)

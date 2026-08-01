@@ -22,6 +22,23 @@ services:
         required: false
     environment:
       REDIS_URL: redis://127.0.0.1:6379/0
+      # Keep Telegram enabled for researched verdicts, but suppress raw scanner alerts.
+      ENABLE_RAW_TELEGRAM_ALERTS: "false"
+      # Route second-stage research through the host's local Claude Code install.
+      CLAUDE_CODE_ENABLED: "true"
+      CLAUDE_CODE_BIN: /usr/local/bin/claude
+      CLAUDE_CODE_MODEL: claude-opus-4-8
+      CLAUDE_CODE_EFFORT: max
+      CLAUDE_CODE_MAX_BUDGET_USD: "2.0"
+    volumes:
+      # Claude Code native binary + auth/config from the host. The app allow-lists
+      # only WebSearch/WebFetch for untrusted token prompts.
+      - /usr/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe:/usr/local/bin/claude:ro
+      - /root/.claude:/root/.claude
+      - /root/.claude.json:/root/.claude.json
+      # Make the repo's research skills visible to Claude Code.
+      - ./skills/token-research:/root/.claude/skills/token-research:ro
+      - ./skills/x-research:/root/.claude/skills/x-research:ro
     command: ["python", "-m", "app.main", "agent", "launch"]
 
 volumes:
